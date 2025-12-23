@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teachable Machine Pose Game</title>
+</head>
+
+<body style="background-image: url(bg.png); background-repeat:no-repeat; background-size: 100%;">
+
+<img id="horse" src="horse.png"
+     style="position: absolute; right: 0px; bottom: 10px; width: 200px;" />
+
+<input id="horse_value" type="hidden" value="0">
+
+<p style="position: absolute; left: 30px; bottom:20px; font-size: 50px; color:red;">
+    <span id="horse_time">0</span><span>초</span>
+</p>
+
+<div>Teachable Machine Pose Model</div>
+<button type="button" onclick="init()">Start</button>
+
+<div>
+    <canvas id="canvas"></canvas>
+</div>
+<div id="label-container"></div>
+
+<!-- ✅ tfjs 최신 버전 -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+
+<script>
+    const URL = "https://teachablemachine.withgoogle.com/models/nHv4igxHQ/";
+    let model, webcam, ctx, labelContainer, maxPredictions;
+
+    async function init() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmPose.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        const size = 200;
+        const flip = true;
+        webcam = new tmPose.Webcam(size, size, flip);
+        await webcam.setup();   // 👉 여기서 WebRTC 사용
+        await webcam.play();
+
+        window.requestAnimationFrame(loop);
+
+        const canvas = document.getElementById("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        ctx = canvas.getContext("2d");
+
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+        for (let i = 0; i < maxPredictions; i++) {
+            labelContainer.appendChild(document.createElement("div"));
+        }
+    }
+
+    async function loop() {
+        webcam.update();
+        await predict();
+        window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+        const prediction = await model.predict(posenetOutput);
+
+        for (let i = 0; i < maxPredictions; i++) {
+            labelContainer.childNodes[i].innerHTML =
+                `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
+        }
+
+        drawPose(pose);
+
+        let w = 200;
+        let v = parseInt(document.getElementById("horse_value").value);
+
+        let p = prediction[0].probability > prediction[1].probability ? 0 : 1;
+
+        if (prediction[p].probability >= 0.9) {
+            if (v % 2 === 0 && p === 0) v++;
+            else if (v % 2 === 1 && p === 1) v++;
+
+            document.getElementById("horse_value").value = v;
+
+            if (v % 2 === 0) {
+                document.getElementById("horse").style.left =
+                    `${document.body.clientWidth - v * 30 - w}px`;
+            }
+        }
+
+        if ((document.body.clientWidth - v * 30 - w) > 0) {
+            let t = parseFloat(document.getElementById("horse_time").innerText);
+            document.getElementById("horse_time").innerText = (t + 1 / 15).toFixed(2);
+        }
+    }
+
+    function drawPose(pose) {
+        ctx.drawImage(webcam.canvas, 0, 0);
+        if (pose) {
+            const minPartConfidence = 0.5;
+            tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+            tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+        }
+    }
+</script>
+
+</body>
+</html>
